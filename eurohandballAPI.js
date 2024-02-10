@@ -1,5 +1,10 @@
+require('dotenv').config();
 const axios = require('axios');
 const dayjs = require('dayjs');
+const Telegrambot = require('node-telegram-bot-api')
+const token = process.env.TELEGRAM_TOKEN
+const chatId = process.env.CHAT_ID
+const bot = new Telegrambot(token, {polling: true})
 
 async function fetchMatchDetails(matchId) {
     const url = `https://ehfeuro.eurohandball.com/umbraco/Api/MatchDetailApi/GetMatchDetailsAsync?matchId=${matchId}&culture=en-US&contentId=51748`;
@@ -47,6 +52,33 @@ async function fetchMatchDetails(matchId) {
         return null;
     }
 }
+
+async function sendNotification(match, teamKey, missingPlayers) {
+    let messageHeader = `Players missing for ${match[teamKey].name}:\n`;
+    let messageBody = '';
+
+    if (missingPlayers.length > 0) {
+        missingPlayers.forEach(player => {
+            // Default to "0 goals" if no specific stats provided
+            const playerPerformance = player.saves !== undefined ? `${player.saves} saves` : `${player.goals || 0} goals`;
+            // Append player info to message body
+            messageBody += `${player.name} - ${playerPerformance}\n`;
+        });
+    } else {
+        messageBody += "None\n";
+    }
+
+    // Combine header and body for the full message
+    let fullMessage = messageHeader + messageBody;
+
+    try {
+        await bot.sendMessage(chatId, fullMessage, { parse_mode: 'Markdown' });
+        console.log(`Notification sent for ${match[teamKey].name}`);
+    } catch (error) {
+        console.error(`Failed to send notification for ${match[teamKey].name}:`, error);
+    }
+}
+
 
 
 async function fetchTeamRoster(clubId, competitionIds, teamName) {
@@ -158,8 +190,8 @@ async function main() {
                     const missingPlayersHome = comparePlayers(homeRoster, matchData.home.players);
                     const missingPlayersAway = comparePlayers(awayRoster, matchData.away.players);
 
-                    console.log(`Missing players for home team (${matchData.home.name}):`, missingPlayersHome);
-                    console.log(`Missing players for away team (${matchData.away.name}):`, missingPlayersAway);
+                    await sendNotification(matchData, 'home', missingPlayersHome);
+                    await sendNotification(matchData, 'away', missingPlayersAway);
                 } else {
                     console.log(`Failed to fetch rosters for one or both teams.`);
                 }
