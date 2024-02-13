@@ -12,6 +12,7 @@
     "dayjs": "^1.11.10",
     "dotenv": "^16.4.1",
     "mongodb": "^6.3.0",
+    "mongoose": "^8.1.2",
     "node-telegram-bot-api": "^0.64.0"
   }
 }

@@ -5,6 +5,8 @@ const Telegrambot = require('node-telegram-bot-api')
 const token = process.env.TELEGRAM_TOKEN
 const chatId = process.env.CHAT_ID
 const bot = new Telegrambot(token, {polling: true})
+const mongoose = require('mongoose')
+const {MongoClient} = require("mongodb");
 
 async function fetchMatchDetails(matchId) {
     const url = `https://ehfeuro.eurohandball.com/umbraco/Api/MatchDetailApi/GetMatchDetailsAsync?matchId=${matchId}&culture=en-US&contentId=51748`;
@@ -20,7 +22,7 @@ async function fetchMatchDetails(matchId) {
         }));
 
 
-        const transformedData = {
+        return {
             id: matchDetails.details.matchID,
             roundId: roundId,
             away: {
@@ -47,8 +49,6 @@ async function fetchMatchDetails(matchId) {
             league: matchDetails.details.comp.name,
             allPlayers: players,
         };
-
-        return transformedData;
     } catch (error) {
         console.error(`Request failed for matchId ${matchId}: ${error}`);
         return null;
@@ -167,38 +167,62 @@ async function sendNotification(match, teamKey, missingPlayers) {
 
 
 async function main() {
+    const client = await MongoClient.connect(process.env.MONGODB_URI)
+    const database = client.db('sent_teams_db')
+    const collection = database.collection('sent_teams')
+
     const matchIds = await fetchMatchIds();
     if (matchIds.length) {
-
         for (const matchId of matchIds) {
+            const matchExists = await collection.findOne({matchId: matchId})
+            if (matchExists) {
+                console.log(`Match already exists in the database: ${matchId}`);
+                continue;
+            }
             const matchData = await fetchMatchDetails(matchId);
             if (matchData) {
-                const roundId = matchData.roundId
+                const roundId = matchData.roundId;
                 if (matchData.home.players.length === 0 || matchData.away.players.length === 0) {
-                    console.log("No players on match page yet")
-                    continue
+                    console.log("No players on match page yet");
+                    continue;
                 }
+
                 const competitionIds = ['s9H5PdMUfyxj4Ap4QMTvsQ', 'VOnXVrhoU4vff13IlFgt_w', 'EwoH_yk0xYpV1I73lyx4FQ', 'TNxHCyfQlyGo9PB8Lt5hgA'];
+                const homeRoster = await fetchTeamRoster(matchData.home.id, competitionIds, matchData.home.name, roundId);
+                const awayRoster = await fetchTeamRoster(matchData.away.id, competitionIds, matchData.away.name, roundId);
 
-                const homeRoster = await fetchTeamRoster(matchData.home.id, competitionIds, matchData.home.name,roundId);
-                const awayRoster = await fetchTeamRoster(matchData.away.id, competitionIds, matchData.away.name,roundId);
-
-
-                // Inside your main function, after calling comparePlayers
                 if (homeRoster && awayRoster) {
                     const missingPlayersHome = comparePlayers(homeRoster, matchData.home.players);
                     const missingPlayersAway = comparePlayers(awayRoster, matchData.away.players);
 
                     await sendNotification(matchData, 'home', missingPlayersHome);
                     await sendNotification(matchData, 'away', missingPlayersAway);
+
+                    const matchDocument = {
+                        $set: {
+                        matchId: matchData.id,
+                        roundId: matchData.roundId,
+                        date: matchData.date,
+                        league: matchData.league,
+                        home: matchData.home,
+                        away: matchData.away
+                    }
+                    }
+
+                    await collection.updateOne({matchId: matchData.id}, matchDocument, {upsert: true})
+
+
                 } else {
                     console.log(`Failed to fetch rosters for one or both teams.`);
                 }
-
             }
         }
     }
 }
 
-
-main().then(r => console.log("Bot finished running"));
+mongoose.connect(process.env.MONGODB_URI)
+    .then(() => {
+        console.log('Connected to MongoDB...');
+        main().then(() => console.log("Bot finished running"));
+    })
+    .catch(err => console.error('Could not connect to MongoDB...', err));
