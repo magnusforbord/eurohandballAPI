@@ -11,6 +11,7 @@ async function fetchMatchDetails(matchId) {
     try {
         const response = await axios.get(url);
         const matchDetails = response.data.matchDetails;
+        const roundId = matchDetails.details.comp.round.id
         const players = matchDetails.details.homeTeam.players.concat(matchDetails.details.guestTeam.players).map(player => ({
             id: player.id,
             name: `${player.person.firstName} ${player.person.lastName}`,
@@ -21,6 +22,7 @@ async function fetchMatchDetails(matchId) {
 
         const transformedData = {
             id: matchDetails.details.matchID,
+            roundId: roundId,
             away: {
                 id: matchDetails.details.guestTeam.team.id,
                 name: matchDetails.details.guestTeam.team.fullName,
@@ -53,37 +55,9 @@ async function fetchMatchDetails(matchId) {
     }
 }
 
-async function sendNotification(match, teamKey, missingPlayers) {
-    let messageHeader = `Players missing for ${match[teamKey].name}:\n`;
-    let messageBody = '';
-
-    if (missingPlayers.length > 0) {
-        missingPlayers.forEach(player => {
-            // Default to "0 goals" if no specific stats provided
-            const playerPerformance = player.saves !== undefined ? `${player.saves} saves` : `${player.goals || 0} goals`;
-            // Append player info to message body
-            messageBody += `${player.name} - ${playerPerformance}\n`;
-        });
-    } else {
-        messageBody += "None\n";
-    }
-
-    // Combine header and body for the full message
-    let fullMessage = messageHeader + messageBody;
-
-    try {
-        await bot.sendMessage(chatId, fullMessage, { parse_mode: 'Markdown' });
-        console.log(`Notification sent for ${match[teamKey].name}`);
-    } catch (error) {
-        console.error(`Failed to send notification for ${match[teamKey].name}:`, error);
-    }
-}
-
-
-
-async function fetchTeamRoster(clubId, competitionIds, teamName) {
+async function fetchTeamRoster(clubId, competitionIds, teamName, roundId) {
     for (const competitionId of competitionIds) {
-        const url = `https://www.eurohandball.com/umbraco/Api/ClubDetailsApi/GetPlayers?competitionId=${competitionId}&clubId=${clubId}&roundId=kWvDaphagqoomWsHrgovow&culture=en-US&contentId=1528`;
+        const url = `https://www.eurohandball.com/umbraco/Api/ClubDetailsApi/GetPlayers?competitionId=${competitionId}&clubId=${clubId}&roundId=${roundId}&culture=en-US&contentId=1528`;
         try {
             const response = await axios.get(url);
             if (response.data && (response.data.players.length > 0 || response.data.goalKeepers.length > 0)) {
@@ -164,7 +138,31 @@ function comparePlayers(teamRoster, matchPlayers) {
     });
 }
 
+async function sendNotification(match, teamKey, missingPlayers) {
+    let messageHeader = `Players missing for ${match[teamKey].name}:\n`;
+    let messageBody = '';
 
+    if (missingPlayers.length > 0) {
+        missingPlayers.forEach(player => {
+            // Default to "0 goals" if no specific stats provided
+            const playerPerformance = player.saves !== undefined ? `${player.saves} saves` : `${player.goals || 0} goals`;
+            // Append player info to message body
+            messageBody += `${player.name} - ${playerPerformance}\n`;
+        });
+    } else {
+        messageBody += "None\n";
+    }
+
+    // Combine header and body for the full message
+    let fullMessage = messageHeader + messageBody;
+
+    try {
+        await bot.sendMessage(chatId, fullMessage, { parse_mode: 'Markdown' });
+        console.log(`Notification sent for ${match[teamKey].name}`);
+    } catch (error) {
+        console.error(`Failed to send notification for ${match[teamKey].name}:`, error);
+    }
+}
 
 
 
@@ -175,14 +173,15 @@ async function main() {
         for (const matchId of matchIds) {
             const matchData = await fetchMatchDetails(matchId);
             if (matchData) {
+                const roundId = matchData.roundId
                 if (matchData.home.players.length === 0 || matchData.away.players.length === 0) {
                     console.log("No players on match page yet")
                     continue
                 }
-                const competitionIds = ['s9H5PdMUfyxj4Ap4QMTvsQ', 'VOnXVrhoU4vff13IlFgt_w', 'EwoH_yk0xYpV1I73lyx4FQ'];
+                const competitionIds = ['s9H5PdMUfyxj4Ap4QMTvsQ', 'VOnXVrhoU4vff13IlFgt_w', 'EwoH_yk0xYpV1I73lyx4FQ', 'TNxHCyfQlyGo9PB8Lt5hgA'];
 
-                const homeRoster = await fetchTeamRoster(matchData.home.id, competitionIds, matchData.home.name);
-                const awayRoster = await fetchTeamRoster(matchData.away.id, competitionIds, matchData.away.name);
+                const homeRoster = await fetchTeamRoster(matchData.home.id, competitionIds, matchData.home.name,roundId);
+                const awayRoster = await fetchTeamRoster(matchData.away.id, competitionIds, matchData.away.name,roundId);
 
 
                 // Inside your main function, after calling comparePlayers
