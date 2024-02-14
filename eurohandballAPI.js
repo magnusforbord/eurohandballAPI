@@ -4,7 +4,7 @@ const dayjs = require('dayjs');
 const Telegrambot = require('node-telegram-bot-api')
 const token = process.env.TELEGRAM_TOKEN
 const chatId = process.env.CHAT_ID
-const bot = new Telegrambot(token, {polling: true})
+const bot = new Telegrambot(token)
 const mongoose = require('mongoose')
 const {MongoClient} = require("mongodb");
 
@@ -122,14 +122,12 @@ async function fetchMatchIds() {
 }
 
 function comparePlayers(teamRoster, matchPlayers) {
-    // Creating a map of match players for efficient lookup
     const matchPlayerMap = new Map(matchPlayers.map(player => [player.name, player]));
 
     // Filtering the team roster to find players not in matchPlayerMap
     return teamRoster.roster.filter(player => {
         return !matchPlayerMap.has(player.name);
     }).map(player => {
-        // Adjusted to include either goals or saves based on player stats
         const stats = player.stats.saves !== undefined ? {saves: player.stats.saves} : {goals: player.stats.goals};
         return {
             name: player.name,
@@ -144,9 +142,7 @@ async function sendNotification(match, teamKey, missingPlayers) {
 
     if (missingPlayers.length > 0) {
         missingPlayers.forEach(player => {
-            // Default to "0 goals" if no specific stats provided
             const playerPerformance = player.saves !== undefined ? `${player.saves} saves` : `${player.goals || 0} goals`;
-            // Append player info to message body
             messageBody += `${player.name} - ${playerPerformance}\n`;
         });
     } else {
@@ -180,6 +176,7 @@ async function main() {
                 continue;
             }
             const matchData = await fetchMatchDetails(matchId);
+            console.log(matchData)
             if (matchData) {
                 const roundId = matchData.roundId;
                 if (matchData.home.players.length === 0 || matchData.away.players.length === 0) {
@@ -187,7 +184,7 @@ async function main() {
                     continue;
                 }
 
-                const competitionIds = ['s9H5PdMUfyxj4Ap4QMTvsQ', 'VOnXVrhoU4vff13IlFgt_w', 'EwoH_yk0xYpV1I73lyx4FQ', 'TNxHCyfQlyGo9PB8Lt5hgA'];
+                const competitionIds = ['s9H5PdMUfyxj4Ap4QMTvsQ', 'VOnXVrhoU4vff13IlFgt_w', 'EwoH_yk0xYpV1I73lyx4FQ', 'TNxHCyfQlyGo9PB8Lt5hgA', '7PArOMBtVwHd7aVHUgXscw'];
                 const homeRoster = await fetchTeamRoster(matchData.home.id, competitionIds, matchData.home.name, roundId);
                 const awayRoster = await fetchTeamRoster(matchData.away.id, competitionIds, matchData.away.name, roundId);
 
