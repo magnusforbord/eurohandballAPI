@@ -1,3 +1,4 @@
+
 require('dotenv').config();
 const axios = require('axios');
 const dayjs = require('dayjs');
@@ -6,14 +7,16 @@ const token = process.env.TELEGRAM_TOKEN
 const chatId = process.env.CHAT_ID
 const bot = new Telegrambot(token)
 const mongoose = require('mongoose')
-const {MongoClient} = require("mongodb");
+const { MongoClient } = require("mongodb");
 
 async function fetchMatchDetails(matchId) {
     const url = `https://ehfeuro.eurohandball.com/umbraco/Api/MatchDetailApi/GetMatchDetailsAsync?matchId=${matchId}&culture=en-US&contentId=51748`;
     try {
         const response = await axios.get(url);
         const matchDetails = response.data.matchDetails;
-        const roundId = matchDetails.details.comp.round.id
+        const roundId = matchDetails.details.comp.round.id;
+        const competitionId = matchDetails.details.comp.id;
+
         const players = matchDetails.details.homeTeam.players.concat(matchDetails.details.guestTeam.players).map(player => ({
             id: player.id,
             name: `${player.person.firstName} ${player.person.lastName}`,
@@ -21,10 +24,10 @@ async function fetchMatchDetails(matchId) {
             goals: player.score.goals,
         }));
 
-
         return {
             id: matchDetails.details.matchID,
             roundId: roundId,
+            competitionId: competitionId,
             away: {
                 id: matchDetails.details.guestTeam.team.id,
                 name: matchDetails.details.guestTeam.team.fullName,
@@ -55,36 +58,36 @@ async function fetchMatchDetails(matchId) {
     }
 }
 
-async function fetchTeamRoster(clubId, competitionIds, teamName, roundId) {
-    for (const competitionId of competitionIds) {
-        const url = `https://www.eurohandball.com/umbraco/Api/ClubDetailsApi/GetPlayers?competitionId=${competitionId}&clubId=${clubId}&roundId=${roundId}&culture=en-US&contentId=1528`;
-        try {
-            const response = await axios.get(url);
-            if (response.data && (response.data.players.length > 0 || response.data.goalKeepers.length > 0)) {
-                // Process both players and goalkeepers
-                const allPlayers = [...response.data.players, ...response.data.goalKeepers];
+async function fetchTeamRoster(clubId, competitionId, teamName, roundId) {
+    const url = `https://www.eurohandball.com/umbraco/Api/ClubDetailsApi/GetPlayers?competitionId=${competitionId}&clubId=${clubId}&roundId=${roundId}&culture=en-US&contentId=1528`;
+    try {
+        const response = await axios.get(url);
+        if (response.data && (response.data.players.length > 0 || response.data.goalKeepers.length > 0)) {
+            // Process both players and goalkeepers
+            const allPlayers = [...response.data.players, ...response.data.goalKeepers];
 
-                const playerNamesAndStats = allPlayers.map(player => {
-                    const isGoalkeeper = player.isGoalkeeper; // Adjust based on the actual field indicating a goalkeeper
-                    const stats = isGoalkeeper ? { saves: player.score.goalkeeperSaves } : { goals: player.score.goals };
-
-                    return {
-                        name: `${player.person.firstName} ${player.person.lastName}`,
-                        position: player.playingPosition,
-                        stats: stats
-                    };
-                });
+            const playerNamesAndStats = allPlayers.map(player => {
+                const isGoalkeeper = player.isGoalkeeper;
+                const stats = isGoalkeeper ? { saves: player.score.goalkeeperSaves } : { goals: player.score.goals };
 
                 return {
-                    teamId: clubId,
-                    roster: playerNamesAndStats
+                    name: `${player.person.firstName} ${player.person.lastName}`,
+                    position: player.playingPosition,
+                    stats: stats
                 };
-            }
-        } catch (error) {
-            console.error(`Attempt with competitionId ${competitionId} for ${teamName} failed: ${error}`);
+            });
+
+            return {
+                teamId: clubId,
+                roster: playerNamesAndStats
+            };
         }
+    } catch (error) {
+        console.error(`Attempt with competitionId ${competitionId} for ${teamName} failed: ${error}`);
     }
-    console.log(`Failed to fetch roster for ${teamName} after trying multiple competitionIds.`);
+
+    // Handle if no roster was found
+    console.log(`Failed to fetch roster for ${teamName}`);
     return null;
 }
 
@@ -93,7 +96,7 @@ async function fetchTeamRoster(clubId, competitionIds, teamName, roundId) {
 
 async function fetchMatchIds() {
     const url = "https://www.eurohandball.com/umbraco/Api/LiveScoreApi/GetLiveScoreMatchesAsync?culture=en-US&contentId=1069&pastDays=0&upcomingMatches=15";
-    const today = dayjs().format('YYYY-MM-DD')
+    const today = (dayjs().format('YYYY-MM-DD'))
     try {
         const response = await axios.get(url);
 
@@ -160,8 +163,6 @@ async function sendNotification(match, teamKey, missingPlayers) {
     }
 }
 
-
-
 async function main() {
     const client = await MongoClient.connect(process.env.MONGODB_URI)
     const database = client.db('sent_teams_db')
@@ -175,8 +176,9 @@ async function main() {
                 console.log(`Match already exists in the database: ${matchId}`);
                 continue;
             }
+
             const matchData = await fetchMatchDetails(matchId);
-            console.log(matchData)
+
             if (matchData) {
                 const roundId = matchData.roundId;
                 if (matchData.home.players.length === 0 || matchData.away.players.length === 0) {
@@ -184,38 +186,39 @@ async function main() {
                     continue;
                 }
 
-                const competitionIds = ['s9H5PdMUfyxj4Ap4QMTvsQ', 'VOnXVrhoU4vff13IlFgt_w', 'EwoH_yk0xYpV1I73lyx4FQ', 'TNxHCyfQlyGo9PB8Lt5hgA', '7PArOMBtVwHd7aVHUgXscw'];
-                const homeRoster = await fetchTeamRoster(matchData.home.id, competitionIds, matchData.home.name, roundId);
-                const awayRoster = await fetchTeamRoster(matchData.away.id, competitionIds, matchData.away.name, roundId);
+                    const homeRoster = await fetchTeamRoster(matchData.home.id, matchData.competitionId, matchData.home.name, roundId);
+                    const awayRoster = await fetchTeamRoster(matchData.away.id, matchData.competitionId, matchData.away.name, roundId);
 
-                if (homeRoster && awayRoster) {
-                    const missingPlayersHome = comparePlayers(homeRoster, matchData.home.players);
-                    const missingPlayersAway = comparePlayers(awayRoster, matchData.away.players);
+                    if (homeRoster && awayRoster) {
+                        const missingPlayersHome = comparePlayers(homeRoster, matchData.home.players);
+                        const missingPlayersAway = comparePlayers(awayRoster, matchData.away.players);
 
-                    await sendNotification(matchData, 'home', missingPlayersHome);
-                    await sendNotification(matchData, 'away', missingPlayersAway);
+                        await sendNotification(matchData, 'home', missingPlayersHome);
+                        await sendNotification(matchData, 'away', missingPlayersAway);
 
-                    const matchDocument = {
-                        $set: {
-                        matchId: matchData.id,
-                        roundId: matchData.roundId,
-                        date: matchData.date,
-                        league: matchData.league,
-                        home: matchData.home,
-                        away: matchData.away
+                        const matchDocument = {
+                            $set: {
+                                matchId: matchData.id,
+                                roundId: matchData.roundId,
+                                date: matchData.date,
+                                league: matchData.league,
+                                home: matchData.home,
+                                away: matchData.away
+                            }
+                        }
+
+                        await collection.updateOne({matchId: matchData.id}, matchDocument, {upsert: true})
+
+
+                    } else {
+                        console.log(`Failed to fetch rosters for one or both teams.`);
                     }
-                    }
-
-                    await collection.updateOne({matchId: matchData.id}, matchDocument, {upsert: true})
-
-
-                } else {
-                    console.log(`Failed to fetch rosters for one or both teams.`);
                 }
             }
         }
-    }
 }
+
+// Connect to MongoDB
 
 mongoose.connect(process.env.MONGODB_URI)
     .then(() => {
@@ -223,3 +226,4 @@ mongoose.connect(process.env.MONGODB_URI)
         main().then(() => console.log("Bot finished running"));
     })
     .catch(err => console.error('Could not connect to MongoDB...', err));
+
