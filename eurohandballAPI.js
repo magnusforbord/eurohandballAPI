@@ -1,13 +1,14 @@
+'use strict';
 
 require('dotenv').config();
 const axios = require('axios');
 const dayjs = require('dayjs');
-const Telegrambot = require('node-telegram-bot-api')
-const token = process.env.TELEGRAM_TOKEN
-const chatId = process.env.CHAT_ID
-const bot = new Telegrambot(token)
-const mongoose = require('mongoose')
+const TelegramBot = require('node-telegram-bot-api');
 const { MongoClient } = require("mongodb");
+
+const token = process.env.TELEGRAM_TOKEN;
+const chatId = process.env.CHAT_ID;
+const bot = new TelegramBot(token);
 
 async function fetchMatchDetails(matchId) {
     const url = `https://ehfeuro.eurohandball.com/umbraco/Api/MatchDetailApi/GetMatchDetailsAsync?matchId=${matchId}&culture=en-US&contentId=51748`;
@@ -63,7 +64,6 @@ async function fetchTeamRoster(clubId, competitionId, teamName, roundId) {
     try {
         const response = await axios.get(url);
         if (response.data && (response.data.players.length > 0 || response.data.goalKeepers.length > 0)) {
-            // Process both players and goalkeepers
             const allPlayers = [...response.data.players, ...response.data.goalKeepers];
 
             const playerNamesAndStats = allPlayers.map(player => {
@@ -86,17 +86,13 @@ async function fetchTeamRoster(clubId, competitionId, teamName, roundId) {
         console.error(`Attempt with competitionId ${competitionId} for ${teamName} failed: ${error}`);
     }
 
-    // Handle if no roster was found
     console.log(`Failed to fetch roster for ${teamName}`);
     return null;
 }
 
-
-
-
 async function fetchMatchIds() {
     const url = "https://www.eurohandball.com/umbraco/Api/LiveScoreApi/GetLiveScoreMatchesAsync?culture=en-US&contentId=1069&pastDays=0&upcomingMatches=15";
-    const today = (dayjs().format('YYYY-MM-DD'))
+    const today = dayjs().format('YYYY-MM-DD');
     try {
         const response = await axios.get(url);
 
@@ -127,11 +123,10 @@ async function fetchMatchIds() {
 function comparePlayers(teamRoster, matchPlayers) {
     const matchPlayerMap = new Map(matchPlayers.map(player => [player.name, player]));
 
-    // Filtering the team roster to find players not in matchPlayerMap
     return teamRoster.roster.filter(player => {
         return !matchPlayerMap.has(player.name);
     }).map(player => {
-        const stats = player.stats.saves !== undefined ? {saves: player.stats.saves} : {goals: player.stats.goals};
+        const stats = player.stats.saves !== undefined ? { saves: player.stats.saves } : { goals: player.stats.goals };
         return {
             name: player.name,
             ...stats
@@ -152,7 +147,6 @@ async function sendNotification(match, teamKey, missingPlayers) {
         messageBody += "None\n";
     }
 
-    // Combine header and body for the full message
     let fullMessage = messageHeader + messageBody;
 
     try {
@@ -163,67 +157,79 @@ async function sendNotification(match, teamKey, missingPlayers) {
     }
 }
 
-async function main() {
-    const client = await MongoClient.connect(process.env.MONGODB_URI)
-    const database = client.db('sent_teams_db')
-    const collection = database.collection('sent_teams')
+async function processMatches(matchIds, collection) {
+    for (const matchId of matchIds) {
+        const matchExists = await collection.findOne({ matchId: matchId });
+        if (matchExists) {
+            console.log(`Match already exists in the database: ${matchId}`);
+            continue;
+        }
 
-    const matchIds = await fetchMatchIds();
-    if (matchIds.length) {
-        for (const matchId of matchIds) {
-            const matchExists = await collection.findOne({matchId: matchId})
-            if (matchExists) {
-                console.log(`Match already exists in the database: ${matchId}`);
+        const matchData = await fetchMatchDetails(matchId);
+
+        if (matchData) {
+            const roundId = matchData.roundId;
+            if (matchData.home.players.length === 0 || matchData.away.players.length === 0) {
+                console.log("No players on match page yet");
                 continue;
             }
 
-            const matchData = await fetchMatchDetails(matchId);
+            const homeRoster = await fetchTeamRoster(matchData.home.id, matchData.competitionId, matchData.home.name, roundId);
+            const awayRoster = await fetchTeamRoster(matchData.away.id, matchData.competitionId, matchData.away.name, roundId);
 
-            if (matchData) {
-                const roundId = matchData.roundId;
-                if (matchData.home.players.length === 0 || matchData.away.players.length === 0) {
-                    console.log("No players on match page yet");
-                    continue;
-                }
+            if (homeRoster && awayRoster) {
+                const missingPlayersHome = comparePlayers(homeRoster, matchData.home.players);
+                const missingPlayersAway = comparePlayers(awayRoster, matchData.away.players);
 
-                    const homeRoster = await fetchTeamRoster(matchData.home.id, matchData.competitionId, matchData.home.name, roundId);
-                    const awayRoster = await fetchTeamRoster(matchData.away.id, matchData.competitionId, matchData.away.name, roundId);
+                await sendNotification(matchData, 'home', missingPlayersHome);
+                await sendNotification(matchData, 'away', missingPlayersAway);
 
-                    if (homeRoster && awayRoster) {
-                        const missingPlayersHome = comparePlayers(homeRoster, matchData.home.players);
-                        const missingPlayersAway = comparePlayers(awayRoster, matchData.away.players);
-
-                        await sendNotification(matchData, 'home', missingPlayersHome);
-                        await sendNotification(matchData, 'away', missingPlayersAway);
-
-                        const matchDocument = {
-                            $set: {
-                                matchId: matchData.id,
-                                roundId: matchData.roundId,
-                                date: matchData.date,
-                                league: matchData.league,
-                                home: matchData.home,
-                                away: matchData.away
-                            }
-                        }
-
-                        await collection.updateOne({matchId: matchData.id}, matchDocument, {upsert: true})
-
-
-                    } else {
-                        console.log(`Failed to fetch rosters for one or both teams.`);
+                const matchDocument = {
+                    $set: {
+                        matchId: matchData.id,
+                        roundId: matchData.roundId,
+                        date: matchData.date,
+                        league: matchData.league,
+                        home: matchData.home,
+                        away: matchData.away
                     }
-                }
+                };
+
+                await collection.updateOne({ matchId: matchData.id }, matchDocument, { upsert: true });
+
+            } else {
+                console.log(`Failed to fetch rosters for one or both teams.`);
             }
         }
+    }
 }
 
-// Connect to MongoDB
+async function initializeMongoClient() {
+    const client = new MongoClient(process.env.MONGODB_URI);
+    await client.connect();
+    return client;
+}
 
-mongoose.connect(process.env.MONGODB_URI)
-    .then(() => {
-        console.log('Connected to MongoDB...');
-        main().then(() => console.log("Bot finished running"));
-    })
-    .catch(err => console.error('Could not connect to MongoDB...', err));
+async function main() {
+    const client = await initializeMongoClient();
+    try {
+        const database = client.db('sent_teams_db');
+        const collection = database.collection('sent_teams');
 
+        const matchIds = await fetchMatchIds();
+        if (matchIds.length) {
+            await processMatches(matchIds, collection);
+        }
+    } catch (error) {
+        console.error('Error in main function:', error);
+    } finally {
+        await client.close();
+        console.log('Finished processing matches');
+        process.exit(0);
+    }
+}
+
+main().then(() => console.log("Bot finished running")).catch((error) => {
+    console.error('Error in main execution:', error);
+    process.exit(1);
+});
