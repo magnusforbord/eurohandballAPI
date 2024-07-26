@@ -11,7 +11,7 @@ const chatId = process.env.CHAT_ID;
 const bot = new TelegramBot(token);
 
 async function fetchMatchDetails(matchId) {
-    const url = `https://ehfeuro.eurohandball.com/umbraco/Api/MatchDetailApi/GetMatchDetailsAsync?matchId=${matchId}&culture=en-US&contentId=51748`;
+    const url = `https://www.eurohandball.com/umbraco/api/matchdetailapi/GetMatchDetails?matchId=${matchId}&culture=en-US&contentId=48481`;
     try {
         const response = await axios.get(url);
         const matchDetails = response.data.matchDetails;
@@ -91,8 +91,8 @@ async function fetchTeamRoster(clubId, competitionId, teamName, roundId) {
 }
 
 async function fetchMatchIds() {
-    const url = "https://www.eurohandball.com/umbraco/Api/LiveScoreApi/GetLiveScoreMatchesAsync?culture=en-US&contentId=1069&pastDays=0&upcomingMatches=15";
-    const today = dayjs().format('YYYY-MM-DD');
+    const url = "https://www.eurohandball.com/umbraco/api/livescoreapi/GetLiveScoreMatches/1069";
+    const today = dayjs().format('2024-08-07');
     try {
         const response = await axios.get(url);
 
