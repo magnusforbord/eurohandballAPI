@@ -5,15 +5,37 @@ const axios = require('axios');
 const dayjs = require('dayjs');
 const TelegramBot = require('node-telegram-bot-api');
 const { MongoClient } = require("mongodb");
+const {HttpsProxyAgent} = require("https-proxy-agent");
+const proxy_username = process.env.PROXY_USERNAME;
+const proxy_password = process.env.PROXY_PASSWORD;
 
 const token = process.env.TELEGRAM_TOKEN;
 const chatId = process.env.CHAT_ID;
 const bot = new TelegramBot(token);
 
+const proxies = [
+    `http://${proxy_username}:${proxy_password}@109.238.203.91:50100`,
+    `http://${proxy_username}:${proxy_password}@109.238.203.180:50100`,
+    `http://${proxy_username}:${proxy_password}@109.238.203.92:50100`,
+    `http://${proxy_username}:${proxy_password}@109.238.203.94:50100`,
+    `http://${proxy_username}:${proxy_password}@109.238.203.153:50100`,
+];
+
+const getRandomProxy = () => {
+    return proxies[Math.floor(Math.random() * proxies.length)];
+};
+
 async function fetchMatchDetails(matchId) {
+    const proxy = getRandomProxy();
+    const httpsAgent = new HttpsProxyAgent(proxy);
+
+    const axiosInstance = axios.create({
+        httpsAgent,
+    });
+
     const url = `https://www.eurohandball.com/umbraco/api/matchdetailapi/GetMatchDetails?matchId=${matchId}&culture=en-US&contentId=48481`;
     try {
-        const response = await axios.get(url);
+        const response = await axiosInstance.get(url);
         const matchDetails = response.data.matchDetails;
         const roundId = matchDetails.details.comp.round.id;
         const competitionId = matchDetails.details.comp.id;
@@ -60,9 +82,16 @@ async function fetchMatchDetails(matchId) {
 }
 
 async function fetchTeamRoster(clubId, competitionId, teamName, roundId) {
+    const proxy = getRandomProxy();
+    const httpsAgent = new HttpsProxyAgent(proxy);
+
+    const axiosInstance = axios.create({
+        httpsAgent,
+    });
+
     const url = `https://www.eurohandball.com/umbraco/Api/ClubDetailsApi/GetPlayers?competitionId=${competitionId}&clubId=${clubId}&roundId=${roundId}&culture=en-US&contentId=1528`;
     try {
-        const response = await axios.get(url);
+        const response = await axiosInstance.get(url);
         if (response.data && (response.data.players.length > 0 || response.data.goalKeepers.length > 0)) {
             const allPlayers = [...response.data.players, ...response.data.goalKeepers];
 
@@ -91,10 +120,17 @@ async function fetchTeamRoster(clubId, competitionId, teamName, roundId) {
 }
 
 async function fetchMatchIds() {
+    const proxy = getRandomProxy();
+    const httpsAgent = new HttpsProxyAgent(proxy);
+
+    const axiosInstance = axios.create({
+        httpsAgent,
+    });
+
     const url = "https://www.eurohandball.com/umbraco/api/livescoreapi/GetLiveScoreMatches/1069";
-    const today = dayjs().format('2024-08-07');
+    const today = dayjs().format('YYYY-MM-DD');
     try {
-        const response = await axios.get(url);
+        const response = await axiosInstance.get(url);
 
         const json_data = response.data;
         const match_ids = [];
