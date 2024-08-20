@@ -250,7 +250,7 @@ async function main() {
     const client = await initializeMongoClient();
     try {
         const database = client.db('sent_teams_db');
-        const collection = database.collection('sent_teams');
+        const collection = database.collection('sent_teams_eurohandball');
 
         const matchIds = await fetchMatchIds();
         if (matchIds.length) {
