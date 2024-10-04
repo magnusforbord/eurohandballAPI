@@ -14,11 +14,12 @@ const chatId = process.env.CHAT_ID;
 const bot = new TelegramBot(token);
 
 const proxies = [
-    `http://${proxy_username}:${proxy_password}@109.238.203.91:50100`,
-    `http://${proxy_username}:${proxy_password}@109.238.203.180:50100`,
-    `http://${proxy_username}:${proxy_password}@109.238.203.92:50100`,
-    `http://${proxy_username}:${proxy_password}@109.238.203.94:50100`,
-    `http://${proxy_username}:${proxy_password}@109.238.203.153:50100`,
+    `http://${proxy_username}:${proxy_password}@85.234.179.60:50100`,
+    `http://${proxy_username}:${proxy_password}@122.8.79.236:50100`,
+    `http://${proxy_username}:${proxy_password}@89.184.20.50:50100`,
+    `http://${proxy_username}:${proxy_password}@89.184.22.68:50100`,
+    `http://${proxy_username}:${proxy_password}@89.184.21.189:50100`,
+    `http://${proxy_username}:${proxy_password}@85.234.179.44:50100`
 ];
 
 const getRandomProxy = () => {
@@ -152,6 +153,14 @@ async function fetchMatchIds() {
         return match_ids;
     } catch (error) {
         console.error(`Failed to fetch match IDs: ${error}`);
+
+        // Send the error message via Telegram
+        try {
+            await bot.sendMessage(chatId, `Failed to fetch match IDs: ${error.message || error}`);
+        } catch (telegramError) {
+            console.error(`Failed to send error notification via Telegram: ${telegramError}`);
+        }
+
         return [];
     }
 }
