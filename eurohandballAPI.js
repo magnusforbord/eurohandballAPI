@@ -153,14 +153,6 @@ async function fetchMatchIds() {
         return match_ids;
     } catch (error) {
         console.error(`Failed to fetch match IDs: ${error}`);
-
-        // Send the error message via Telegram
-        try {
-            await bot.sendMessage(chatId, `Failed to fetch match IDs: ${error.message || error}`);
-        } catch (telegramError) {
-            console.error(`Failed to send error notification via Telegram: ${telegramError}`);
-        }
-
         return [];
     }
 }
