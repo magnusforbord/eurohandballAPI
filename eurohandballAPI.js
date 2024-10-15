@@ -10,7 +10,7 @@ const proxy_username = process.env.PROXY_USERNAME;
 const proxy_password = process.env.PROXY_PASSWORD;
 
 const token = process.env.TELEGRAM_TOKEN;
-const chatId = process.env.CHAT_ID;
+const chatIds = [process.env.CHAT_ID1, process.env.CHAT_ID2];
 const bot = new TelegramBot(token);
 
 const proxies = [
@@ -186,11 +186,13 @@ async function sendNotification(match, teamKey, missingPlayers) {
 
     let fullMessage = messageHeader + messageBody;
 
-    try {
-        await bot.sendMessage(chatId, fullMessage, { parse_mode: 'Markdown' });
-        console.log(`Notification sent for ${match[teamKey].name}`);
-    } catch (error) {
-        console.error(`Failed to send notification for ${match[teamKey].name}:`, error);
+    for (const chatId of chatIds) {
+        try {
+            await bot.sendMessage(chatId, fullMessage, { parse_mode: 'Markdown' });
+            console.log(`Notification sent to chat ID ${chatId} for ${match[teamKey].name}`);
+        } catch (error) {
+            console.error(`Failed to send notification to chat ID ${chatId} for ${match[teamKey].name}:`, error);
+        }
     }
 }
 
