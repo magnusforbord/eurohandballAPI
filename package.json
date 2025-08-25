@@ -9,12 +9,12 @@
   },
   "private": true,
   "dependencies": {
-    "axios": "^1.7.7",
+    "axios": "1.11.0",
     "dayjs": "^1.11.10",
     "dotenv": "^16.4.1",
     "https-proxy-agent": "^7.0.5",
     "mongodb": "^6.3.0",
-    "mongoose": "^8.1.2",
+    "mongoose": "8.9.5",
     "node-telegram-bot-api": "^0.64.0"
   }
 }

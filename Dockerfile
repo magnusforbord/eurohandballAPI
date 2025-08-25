@@ -8,13 +8,10 @@ WORKDIR /usr/src/app
 COPY package*.json ./
 
 # Install the dependencies
-RUN npm install
+RUN npm ci --omit=dev
 
 # Copy the rest of the application code
 COPY . .
-
-# Expose the port that the app runs on
-EXPOSE 3000
 
 # Command to start the app
 CMD ["npm", "start"]
