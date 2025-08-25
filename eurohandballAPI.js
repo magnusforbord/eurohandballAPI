@@ -6,33 +6,58 @@ const dayjs = require('dayjs');
 const TelegramBot = require('node-telegram-bot-api');
 const { MongoClient } = require("mongodb");
 const {HttpsProxyAgent} = require("https-proxy-agent");
-const proxy_username = process.env.PROXY_USERNAME;
-const proxy_password = process.env.PROXY_PASSWORD;
+const use_proxies = process.env.USE_PROXIES;
+const {getRandomProxy} = require('./proxies');
 
 const token = process.env.TELEGRAM_TOKEN;
 const chatIds = [process.env.CHAT_ID1, process.env.CHAT_ID2];
 const bot = new TelegramBot(token);
 
-const proxies = [
-    `http://${proxy_username}:${proxy_password}@85.234.179.60:50100`,
-    `http://${proxy_username}:${proxy_password}@122.8.79.236:50100`,
-    `http://${proxy_username}:${proxy_password}@89.184.20.50:50100`,
-    `http://${proxy_username}:${proxy_password}@89.184.22.68:50100`,
-    `http://${proxy_username}:${proxy_password}@89.184.21.189:50100`,
-    `http://${proxy_username}:${proxy_password}@85.234.179.44:50100`
-];
+function createAxios(){
+    if(use_proxies === 'true'){
+        const proxy = getRandomProxy();
+        const httpsAgent = new HttpsProxyAgent(proxy);
+        return axios.create({ httpsAgent });
+    } else {
+        return axios.create();
+    }
+}
 
-const getRandomProxy = () => {
-    return proxies[Math.floor(Math.random() * proxies.length)];
-};
+
+async function fetchMatchIds() {
+    const axiosInstance = createAxios()
+
+    const url = "https://www.eurohandball.com/umbraco/api/livescoreapi/GetLiveScoreMatches/1069";
+    const today = dayjs().format('YYYY-MM-DD');
+    try {
+        const response = await axiosInstance.get(url);
+
+        const json_data = response.data;
+        const match_ids = [];
+
+        json_data.days.forEach(day => {
+            if (day.dayDatumFormatted === today) {
+                day.liveScoreMatches.forEach(match => {
+                    match_ids.push(match.match.matchID);
+                });
+            }
+        });
+
+        if (match_ids.length === 0) {
+            console.log(`No matches found for date: ${today}`);
+        } else {
+            console.log(`Total found match IDs for date: ${today}: ${match_ids.join(', ')}`);
+        }
+
+        return match_ids;
+    } catch (error) {
+        console.error(`Failed to fetch match IDs: ${error}`);
+        return [];
+    }
+}
 
 async function fetchMatchDetails(matchId) {
-    const proxy = getRandomProxy();
-    const httpsAgent = new HttpsProxyAgent(proxy);
-
-    const axiosInstance = axios.create({
-        httpsAgent,
-    });
+    const axiosInstance = createAxios()
 
     const url = `https://www.eurohandball.com/umbraco/api/matchdetailapi/GetMatchDetails?matchId=${matchId}&culture=en-US&contentId=48481`;
     try {
@@ -83,12 +108,7 @@ async function fetchMatchDetails(matchId) {
 }
 
 async function fetchTeamRoster(clubId, competitionId, teamName, roundId) {
-    const proxy = getRandomProxy();
-    const httpsAgent = new HttpsProxyAgent(proxy);
-
-    const axiosInstance = axios.create({
-        httpsAgent,
-    });
+    const axiosInstance = createAxios()
 
     const url = `https://www.eurohandball.com/umbraco/Api/ClubDetailsApi/GetPlayers?competitionId=${competitionId}&clubId=${clubId}&roundId=${roundId}&culture=en-US&contentId=1528`;
     try {
@@ -118,43 +138,6 @@ async function fetchTeamRoster(clubId, competitionId, teamName, roundId) {
 
     console.log(`Failed to fetch roster for ${teamName}`);
     return null;
-}
-
-async function fetchMatchIds() {
-    const proxy = getRandomProxy();
-    const httpsAgent = new HttpsProxyAgent(proxy);
-
-    const axiosInstance = axios.create({
-        httpsAgent,
-    });
-
-    const url = "https://www.eurohandball.com/umbraco/api/livescoreapi/GetLiveScoreMatches/1069";
-    const today = dayjs().format('YYYY-MM-DD');
-    try {
-        const response = await axiosInstance.get(url);
-
-        const json_data = response.data;
-        const match_ids = [];
-
-        json_data.days.forEach(day => {
-            if (day.dayDatumFormatted === today) {
-                day.liveScoreMatches.forEach(match => {
-                    match_ids.push(match.match.matchID);
-                });
-            }
-        });
-
-        if (match_ids.length === 0) {
-            console.log(`No matches found for date: ${today}`);
-        } else {
-            console.log(`Total found match IDs for date: ${today}: ${match_ids.join(', ')}`);
-        }
-
-        return match_ids;
-    } catch (error) {
-        console.error(`Failed to fetch match IDs: ${error}`);
-        return [];
-    }
 }
 
 function comparePlayers(teamRoster, matchPlayers) {
