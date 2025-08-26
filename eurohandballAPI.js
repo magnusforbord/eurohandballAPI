@@ -227,7 +227,9 @@ async function processMatches(matchIds, collection) {
 }
 
 async function initializeMongoClient() {
-    const client = new MongoClient(process.env.MONGODB_URI);
+    const client = new MongoClient(process.env.MONGODB_URI, {
+        serverApi: { version: "1", strict: true, deprecationErrors: true },
+    });
     await client.connect();
     return client;
 }
