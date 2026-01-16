@@ -107,23 +107,93 @@ async function fetchMatchDetails(matchId) {
     }
 }
 
+async function fetchTeamRosterEuro(clubId, competitionId, teamName, roundId) {
+    const axiosInstance = createAxios();
+
+    const url = `https://ehfeuro.eurohandball.com/umbraco/api/clubdetailsapi/PlayersEuro?competitionId=${competitionId}&roundId=${roundId}&clubId=${clubId}&culture=en-US&contentId=100479`;
+
+    try {
+        const response = await axiosInstance.get(url);
+        const data = response.data || {};
+
+        if (!Array.isArray(data.playerStatistics) || data.playerStatistics.length === 0) {
+            return null;
+        }
+
+        const roster = data.playerStatistics
+            .map(entry => entry && entry.playerInfo)
+            .filter(Boolean)
+            .map(playerInfo => {
+                const isGoalkeeper = Boolean(
+                    playerInfo.isGoalkeeper ||
+                    playerInfo.playingPosition === 'Goalkeeper' ||
+                    playerInfo.playingPosition === 'GK'
+                );
+
+                const firstName = playerInfo?.person?.firstName ?? '';
+                const lastName = playerInfo?.person?.lastName ?? '';
+                const name = `${firstName} ${lastName}`.trim() || 'Unknown';
+
+                const goals = playerInfo?.score?.goals ?? 0;
+                const saves = playerInfo?.score?.goalkeeperSaves ?? 0;
+
+                return {
+                    name,
+                    position: playerInfo.playingPosition ?? null,
+                    stats: isGoalkeeper ? { saves } : { goals }
+                };
+            });
+
+        if (roster.length === 0) {
+            return null;
+        }
+
+        return {
+            teamId: clubId,
+            roster
+        };
+    } catch (error) {
+        console.error(`Attempt with competitionId ${competitionId} (EURO) for ${teamName} failed: ${error}`);
+        return null;
+    }
+}
+
 async function fetchTeamRoster(clubId, competitionId, teamName, roundId) {
-    const axiosInstance = createAxios()
+    // Special case: EHF EURO uses a different host + response schema.
+    if (competitionId === '6GhctF4whjSrqUaQ1vdrYw') {
+        const euroRoster = await fetchTeamRosterEuro(clubId, competitionId, teamName, roundId);
+        if (euroRoster) return euroRoster;
+
+        console.log(`Failed to fetch EURO roster for ${teamName}`);
+        return null;
+    }
+
+    const axiosInstance = createAxios();
 
     const url = `https://www.eurohandball.com/umbraco/Api/ClubDetailsApi/GetPlayers?competitionId=${competitionId}&clubId=${clubId}&roundId=${roundId}&culture=en-US&contentId=1528`;
     try {
         const response = await axiosInstance.get(url);
-        if (response.data && (response.data.players.length > 0 || response.data.goalKeepers.length > 0)) {
-            const allPlayers = [...response.data.players, ...response.data.goalKeepers];
+        const data = response.data || {};
+
+        const players = Array.isArray(data.players) ? data.players : [];
+        const goalKeepers = Array.isArray(data.goalKeepers) ? data.goalKeepers : [];
+
+        if (players.length > 0 || goalKeepers.length > 0) {
+            const allPlayers = [...players, ...goalKeepers];
 
             const playerNamesAndStats = allPlayers.map(player => {
-                const isGoalkeeper = player.isGoalkeeper;
-                const stats = isGoalkeeper ? { saves: player.score.goalkeeperSaves } : { goals: player.score.goals };
+                const isGoalkeeper = Boolean(player.isGoalkeeper);
+                const goals = player?.score?.goals ?? 0;
+                const saves = player?.score?.goalkeeperSaves ?? 0;
+
+                const firstName = player?.person?.firstName ?? '';
+                const lastName = player?.person?.lastName ?? '';
+                const name = `${firstName} ${lastName}`.trim() || 'Unknown';
 
                 return {
-                    name: `${player.person.firstName} ${player.person.lastName}`,
-                    position: player.playingPosition,
-                    stats: stats
+                    name,
+                    position: player.playingPosition ?? null,
+                    stats: isGoalkeeper ? { saves } : { goals }
                 };
             });
 
