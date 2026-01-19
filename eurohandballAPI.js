@@ -10,7 +10,7 @@ const use_proxies = process.env.USE_PROXIES;
 const {getRandomProxy} = require('./proxies');
 
 const token = process.env.TELEGRAM_TOKEN;
-const chatIds = [process.env.CHAT_ID1, process.env.CHAT_ID2];
+const chatIds = [process.env.CHAT_ID1];
 const bot = new TelegramBot(token);
 
 function createAxios(){
