@@ -170,7 +170,7 @@ async function fetchTeamRoster(clubId, competitionId, teamName, roundId) {
 
     const axiosInstance = createAxios();
 
-    const url = `https://www.eurohandball.com/umbraco/Api/ClubDetailsApi/GetPlayers?competitionId=${competitionId}&clubId=${clubId}&roundId=${roundId}&culture=en-US&contentId=1528`;
+    const url = `https://www.eurohandball.com/umbraco/Api/ClubDetailsApi/Players?competitionId=${competitionId}&clubId=${clubId}&roundId=${roundId}&culture=en-US&contentId=1528`;
     try {
         const response = await axiosInstance.get(url);
         const data = response.data || {};
